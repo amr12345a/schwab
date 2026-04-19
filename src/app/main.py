@@ -1,8 +1,14 @@
+from pathlib import Path
+import sys
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from fastapi import FastAPI, HTTPException, Request, status
 
-from .config import get_settings
-from .models import TradeResult, TradingViewSignal
-from .trading import execute_signal
+from app.config import get_settings
+from app.models import TradeResult, TradingViewSignal
+from app.trading import execute_signal
 
 app = FastAPI(title="TradingView to Schwab Bridge", version="0.1.0")
 
@@ -31,3 +37,9 @@ def tradingview_webhook(signal: TradingViewSignal, request: Request):
         return execute_signal(signal)
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=False)

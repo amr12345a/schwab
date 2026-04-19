@@ -43,7 +43,7 @@ Set these environment variables before starting the server:
 ## Run
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+python3 -m app.main
 ```
 
 ## Example TradingView alert URL
