@@ -67,10 +67,10 @@ def execute_test_order(request: TestOrderRequest, account_hash: str | None = Non
     settings = get_settings()
     resolved_account_hash = account_hash or settings.schwab_account_hash
     if not resolved_account_hash:
-        raise RuntimeError("No active Schwab account selected. Choose one at /trader/v1/accounts first.")
+        raise RuntimeError("No active Schwab account selected.")
 
     quantity = request.quantity or settings.default_order_qty
-    print(f"TEST ORDER: {request.action} {quantity} {request.symbol} ON ACCOUNT {resolved_account_hash}")
+    print(f"TEST ORDER: {request.action} {quantity} {request.symbol} (Account: {resolved_account_hash})")
 
     if request.dry_run or settings.dry_run:
         return TradeResult(
