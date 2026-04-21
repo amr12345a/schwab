@@ -38,9 +38,9 @@ def _initialize_active_account_hash() -> None:
         _active_account_hash = settings.schwab_account_hash or None
     if _active_account_hash:
         print(f"SUCCESS: Trading session active for Schwab account: {_active_account_hash}")
-    else:
-        print("WARNING: No active Schwab account selected. Webhooks will fail until an account is chosen.")
-        print("INFO: You can select an account via GET /trader/v1/accounts?account_hash=<hashValue>")
+        else:
+            print("WARNING: No active Schwab account selected. Webhooks will fail until an account is chosen.")
+            print("INFO: You can select an account via GET /trader/v1/accounts?account_hash=<hashValue>")
 
 
 def _bootstrap_account_hash() -> None:
@@ -53,7 +53,11 @@ def _bootstrap_account_hash() -> None:
     real_account_hash = os.getenv("SCHWAB_REAL_ACCOUNT_HASH", "").strip()
 
     if paper_account_hash and real_account_hash:
-        print("Multiple accounts detected.")
+        if not sys.stdin.isatty():
+            raise RuntimeError(
+                "Choose paper or real from an interactive terminal, or set SCHWAB_ACCOUNT_HASH directly before starting the server."
+            )
+
         while True:
             choice = input("Choose Schwab account to use [paper/real]: ").strip().lower()
             if choice in {"paper", "p"}:
@@ -75,8 +79,6 @@ def _bootstrap_account_hash() -> None:
         os.environ["SCHWAB_ACCOUNT_HASH"] = real_account_hash
         print(f"INFO: Only real account hash found. Using: {real_account_hash}")
         return
-
-    print("INFO: No pre-configured account hashes found. Server will start in 'unselected' mode.")
 
 
 def _get_active_account_hash() -> str | None:
@@ -153,8 +155,8 @@ if __name__ == "__main__":
     
     active = _get_active_account_hash()
     if active:
-        print(f"READY: Orders will be sent to account: {active}")
+        print(f"READY: Server starting. All orders will target: {active}")
     else:
-        print("READY: No account selected yet. Use the API to choose an account.")
+        print("READY: No account selected. Webhooks will fail until /trader/v1/accounts is called.")
 
     uvicorn.run(app, host="127.0.0.1", port=8000)

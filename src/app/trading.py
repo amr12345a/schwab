@@ -66,12 +66,11 @@ def execute_signal(signal: TradingViewSignal, account_hash: str | None = None) -
 def execute_test_order(request: TestOrderRequest, account_hash: str | None = None) -> TradeResult:
     settings = get_settings()
     resolved_account_hash = account_hash or settings.schwab_account_hash
-    quantity = request.quantity or settings.default_order_qty
-
     if not resolved_account_hash:
         raise RuntimeError("No active Schwab account selected. Choose one at /trader/v1/accounts first.")
 
-    print(f"TEST ORDER: {request.action} {quantity} {request.symbol} on {resolved_account_hash}")
+    quantity = request.quantity or settings.default_order_qty
+    print(f"TEST ORDER: {request.action} {quantity} {request.symbol} ON ACCOUNT {resolved_account_hash}")
 
     if request.dry_run or settings.dry_run:
         return TradeResult(
