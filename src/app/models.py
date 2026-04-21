@@ -37,6 +37,18 @@ class TradingViewSignal(BaseModel):
         return value
 
 
+class TestOrderRequest(BaseModel):
+    action: Literal["BUY", "SELL"]
+    symbol: str = Field(min_length=1)
+    quantity: int | None = Field(default=None, ge=1)
+    dry_run: bool = False
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str) -> str:
+        return value.strip().upper()
+
+
 class TradeResult(BaseModel):
     ok: bool
     dry_run: bool

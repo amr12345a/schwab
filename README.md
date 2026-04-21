@@ -43,6 +43,14 @@ Set these environment variables before starting the server:
 
 Use `GET /trader/v1/accounts` to see the linked Schwab accounts. Pass `account_hash=<hashValue>` to that endpoint to set the active account for subsequent trades.
 
+To send a direct test order to Schwab from Python, run [scripts/test_order.py](scripts/test_order.py):
+
+```bash
+python scripts/test_order.py --account-hash your-account-hash --symbol AAPL --quantity 1 --dry-run
+```
+
+Remove `--dry-run` only when you are ready to submit a real order.
+
 If you set both `SCHWAB_PAPER_ACCOUNT_HASH` and `SCHWAB_REAL_ACCOUNT_HASH`, start the app from the terminal and it will prompt you to choose paper or real before the server comes up.
 
 ## Run
@@ -56,6 +64,14 @@ python3 -m app.main
 If you want nginx in front of the app, keep FastAPI bound to `127.0.0.1:8000` and let nginx listen on `80` or `443`.
 
 A sample reverse-proxy config is provided in [nginx/nginx.conf](nginx/nginx.conf). It forwards all requests, including `/webhook/tradingview` and `/trader/v1/accounts`, to the app server.
+
+To test the nginx entry point directly, request `GET /__nginx_test` on the public port:
+
+```bash
+curl http://127.0.0.1/__nginx_test
+```
+
+That should return `nginx entry ok`.
 
 ## Example TradingView alert URL
 

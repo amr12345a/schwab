@@ -9,9 +9,9 @@ if __package__ in {None, ""}:
 from fastapi import FastAPI, HTTPException, Request, status
 
 from app.config import get_settings
-from app.models import TradeResult, TradingViewSignal
+from app.models import TestOrderRequest, TradeResult, TradingViewSignal
 from app.schwab_client import get_client
-from app.trading import execute_signal
+from app.trading import execute_signal, execute_test_order
 
 app = FastAPI(title="TradingView to Schwab Bridge", version="0.1.0")
 _account_hash_lock = Lock()
@@ -32,13 +32,21 @@ def _extract_secret(request: Request, signal: TradingViewSignal) -> str | None:
 
 def _initialize_active_account_hash() -> None:
     global _active_account_hash
+    get_settings.cache_clear()
     settings = get_settings()
     with _account_hash_lock:
         _active_account_hash = settings.schwab_account_hash or None
+    if _active_account_hash:
+        print(f"SUCCESS: Trading session active for Schwab account: {_active_account_hash}")
+        else:
+            print("WARNING: No active Schwab account selected. Webhooks will fail until an account is chosen.")
+            print("INFO: You can select an account via GET /trader/v1/accounts?account_hash=<hashValue>")
 
 
 def _bootstrap_account_hash() -> None:
-    if os.getenv("SCHWAB_ACCOUNT_HASH"):
+    existing_hash = os.getenv("SCHWAB_ACCOUNT_HASH")
+    if existing_hash:
+        print(f"INFO: Using SCHWAB_ACCOUNT_HASH from environment: {existing_hash}")
         return
 
     paper_account_hash = os.getenv("SCHWAB_PAPER_ACCOUNT_HASH", "").strip()
@@ -54,18 +62,22 @@ def _bootstrap_account_hash() -> None:
             choice = input("Choose Schwab account to use [paper/real]: ").strip().lower()
             if choice in {"paper", "p"}:
                 os.environ["SCHWAB_ACCOUNT_HASH"] = paper_account_hash
+                print(f"INFO: Paper account hash selected: {paper_account_hash}")
                 return
             if choice in {"real", "r"}:
                 os.environ["SCHWAB_ACCOUNT_HASH"] = real_account_hash
+                print(f"INFO: Real account hash selected: {real_account_hash}")
                 return
             print("Please enter paper or real.")
 
     if paper_account_hash:
         os.environ["SCHWAB_ACCOUNT_HASH"] = paper_account_hash
+        print(f"INFO: Only paper account hash found. Using: {paper_account_hash}")
         return
 
     if real_account_hash:
         os.environ["SCHWAB_ACCOUNT_HASH"] = real_account_hash
+        print(f"INFO: Only real account hash found. Using: {real_account_hash}")
         return
 
 
@@ -82,6 +94,7 @@ def _set_active_account_hash(account_hash: str, accounts: list[dict]) -> str:
             with _account_hash_lock:
                 _active_account_hash = selected_account_hash
             os.environ["SCHWAB_ACCOUNT_HASH"] = selected_account_hash
+            get_settings.cache_clear()
             return selected_account_hash
 
     raise RuntimeError(f"Unknown Schwab account hash: {account_hash}")
@@ -126,9 +139,17 @@ def tradingview_webhook(signal: TradingViewSignal, request: Request):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 
+@app.post("/trader/v1/accounts/test-order", response_model=TradeResult)
+def trader_test_order(request_body: TestOrderRequest):
+    try:
+        return execute_test_order(request_body, account_hash=_get_active_account_hash())
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+
 if __name__ == "__main__":
     import uvicorn
 
     _bootstrap_account_hash()
     _initialize_active_account_hash()
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=False)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

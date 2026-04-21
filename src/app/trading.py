@@ -1,7 +1,7 @@
 from schwab.orders.equities import equity_buy_market, equity_sell_market
 
 from .config import get_settings
-from .models import TradingViewSignal, TradeResult
+from .models import TestOrderRequest, TradingViewSignal, TradeResult
 from .schwab_client import get_client
 
 
@@ -13,6 +13,14 @@ def _build_order(signal: TradingViewSignal, quantity: int):
     raise ValueError(f"Unsupported action: {signal.action}")
 
 
+def _build_order_from_test_request(request: TestOrderRequest, quantity: int):
+    if request.action == "BUY":
+        return equity_buy_market(request.symbol, quantity).build()
+    if request.action == "SELL":
+        return equity_sell_market(request.symbol, quantity).build()
+    raise ValueError(f"Unsupported action: {request.action}")
+
+
 def execute_signal(signal: TradingViewSignal, account_hash: str | None = None) -> TradeResult:
     settings = get_settings()
     quantity = signal.quantity or settings.default_order_qty
@@ -21,6 +29,8 @@ def execute_signal(signal: TradingViewSignal, account_hash: str | None = None) -
 
     if not resolved_account_hash:
         raise RuntimeError("No active Schwab account selected. Choose one at /trader/v1/accounts first.")
+
+    print(f"TRANSACTION: Processing {signal.action} signal for {signal.symbol} (Qty: {quantity}) on account {resolved_account_hash}")
 
     if settings.dry_run:
         return TradeResult(
@@ -50,4 +60,46 @@ def execute_signal(signal: TradingViewSignal, account_hash: str | None = None) -
         account_hash=resolved_account_hash,
         order_id=order_id,
         message="Order submitted to Schwab",
+    )
+
+
+def execute_test_order(request: TestOrderRequest, account_hash: str | None = None) -> TradeResult:
+    settings = get_settings()
+    quantity = request.quantity or settings.default_order_qty
+    client = get_client()
+    resolved_account_hash = account_hash or settings.schwab_account_hash
+
+    if not resolved_account_hash:
+        raise RuntimeError("No active Schwab account selected. Choose one at /trader/v1/accounts first.")
+
+    print(f"TEST ORDER: Processing {request.action} for {request.symbol} (Qty: {quantity}) on account {resolved_account_hash}")
+
+    if request.dry_run or settings.dry_run:
+        return TradeResult(
+            ok=True,
+            dry_run=True,
+            action=request.action,
+            symbol=request.symbol,
+            quantity=quantity,
+            account_hash=resolved_account_hash,
+            order_id=None,
+            message="Dry run enabled, order not submitted",
+        )
+
+    order_spec = _build_order_from_test_request(request, quantity)
+    response = client.place_order(resolved_account_hash, order_spec)
+
+    order_id = None
+    if hasattr(response, "headers"):
+        order_id = response.headers.get("location")
+
+    return TradeResult(
+        ok=True,
+        dry_run=False,
+        action=request.action,
+        symbol=request.symbol,
+        quantity=quantity,
+        account_hash=resolved_account_hash,
+        order_id=order_id,
+        message="Test order submitted to Schwab",
     )
