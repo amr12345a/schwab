@@ -51,6 +51,12 @@ If you set both `SCHWAB_PAPER_ACCOUNT_HASH` and `SCHWAB_REAL_ACCOUNT_HASH`, star
 python3 -m app.main
 ```
 
+## Nginx
+
+If you want nginx in front of the app, keep FastAPI bound to `127.0.0.1:8000` and let nginx listen on `80` or `443`.
+
+A sample reverse-proxy config is provided in [nginx/nginx.conf](nginx/nginx.conf). It forwards all requests, including `/webhook/tradingview` and `/trader/v1/accounts`, to the app server.
+
 ## Example TradingView alert URL
 
 Use your server URL as the webhook target, for example:

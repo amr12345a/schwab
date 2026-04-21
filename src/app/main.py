@@ -131,4 +131,4 @@ if __name__ == "__main__":
 
     _bootstrap_account_hash()
     _initialize_active_account_hash()
-    uvicorn.run("app.main:app", host="0.0.0.0", port=80, reload=False)
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=False)
