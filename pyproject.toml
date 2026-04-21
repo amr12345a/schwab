@@ -13,6 +13,7 @@ dependencies = [
     "uvicorn[standard]>=0.30,<1.0",
     "pydantic>=2.7,<3.0",
     "schwab-py>=1.5.1",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]

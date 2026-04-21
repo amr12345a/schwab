@@ -5,20 +5,12 @@ from .models import TestOrderRequest, TradingViewSignal, TradeResult
 from .schwab_client import get_client
 
 
-def _build_order(signal: TradingViewSignal, quantity: int):
-    if signal.action == "BUY":
-        return equity_buy_market(signal.symbol, quantity).build()
-    if signal.action == "SELL":
-        return equity_sell_market(signal.symbol, quantity).build()
-    raise ValueError(f"Unsupported action: {signal.action}")
-
-
-def _build_order_from_test_request(request: TestOrderRequest, quantity: int):
-    if request.action == "BUY":
-        return equity_buy_market(request.symbol, quantity).build()
-    if request.action == "SELL":
-        return equity_sell_market(request.symbol, quantity).build()
-    raise ValueError(f"Unsupported action: {request.action}")
+def _build_market_order(action: str, symbol: str, quantity: int):
+    if action == "BUY":
+        return equity_buy_market(symbol, quantity).build()
+    if action == "SELL":
+        return equity_sell_market(symbol, quantity).build()
+    raise ValueError(f"Unsupported action: {action}")
 
 
 def execute_signal(signal: TradingViewSignal, account_hash: str | None = None) -> TradeResult:
@@ -44,7 +36,7 @@ def execute_signal(signal: TradingViewSignal, account_hash: str | None = None) -
             message="Dry run enabled, order not submitted",
         )
 
-    order_spec = _build_order(signal, quantity)
+    order_spec = _build_market_order(signal.action, signal.symbol, quantity)
     response = client.place_order(resolved_account_hash, order_spec)
 
     order_id = None
@@ -85,7 +77,7 @@ def execute_test_order(request: TestOrderRequest, account_hash: str | None = Non
         )
 
     client = get_client()
-    order_spec = _build_order_from_test_request(request, quantity)
+    order_spec = _build_market_order(request.action, request.symbol, quantity)
     response = client.place_order(resolved_account_hash, order_spec)
 
     order_id = None
