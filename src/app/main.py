@@ -1,5 +1,7 @@
 from pathlib import Path
+import os
 import sys
+from threading import Lock
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -8,9 +10,12 @@ from fastapi import FastAPI, HTTPException, Request, status
 
 from app.config import get_settings
 from app.models import TradeResult, TradingViewSignal
+from app.schwab_client import get_client
 from app.trading import execute_signal
 
 app = FastAPI(title="TradingView to Schwab Bridge", version="0.1.0")
+_account_hash_lock = Lock()
+_active_account_hash: str | None = None
 
 
 @app.get("/health")
@@ -25,6 +30,88 @@ def _extract_secret(request: Request, signal: TradingViewSignal) -> str | None:
     return signal.secret
 
 
+def _initialize_active_account_hash() -> None:
+    global _active_account_hash
+    settings = get_settings()
+    with _account_hash_lock:
+        _active_account_hash = settings.schwab_account_hash or None
+
+
+def _bootstrap_account_hash() -> None:
+    if os.getenv("SCHWAB_ACCOUNT_HASH"):
+        return
+
+    paper_account_hash = os.getenv("SCHWAB_PAPER_ACCOUNT_HASH", "").strip()
+    real_account_hash = os.getenv("SCHWAB_REAL_ACCOUNT_HASH", "").strip()
+
+    if paper_account_hash and real_account_hash:
+        if not sys.stdin.isatty():
+            raise RuntimeError(
+                "Choose paper or real from an interactive terminal, or set SCHWAB_ACCOUNT_HASH directly before starting the server."
+            )
+
+        while True:
+            choice = input("Choose Schwab account to use [paper/real]: ").strip().lower()
+            if choice in {"paper", "p"}:
+                os.environ["SCHWAB_ACCOUNT_HASH"] = paper_account_hash
+                return
+            if choice in {"real", "r"}:
+                os.environ["SCHWAB_ACCOUNT_HASH"] = real_account_hash
+                return
+            print("Please enter paper or real.")
+
+    if paper_account_hash:
+        os.environ["SCHWAB_ACCOUNT_HASH"] = paper_account_hash
+        return
+
+    if real_account_hash:
+        os.environ["SCHWAB_ACCOUNT_HASH"] = real_account_hash
+        return
+
+
+def _get_active_account_hash() -> str | None:
+    with _account_hash_lock:
+        return _active_account_hash
+
+
+def _set_active_account_hash(account_hash: str, accounts: list[dict]) -> str:
+    for account in accounts:
+        if str(account.get("hashValue")) == str(account_hash):
+            selected_account_hash = str(account_hash)
+            global _active_account_hash
+            with _account_hash_lock:
+                _active_account_hash = selected_account_hash
+            os.environ["SCHWAB_ACCOUNT_HASH"] = selected_account_hash
+            return selected_account_hash
+
+    raise RuntimeError(f"Unknown Schwab account hash: {account_hash}")
+
+
+@app.get("/trader/v1/accounts")
+def trader_accounts(account_hash: str | None = None):
+    client = get_client()
+    response = client.get_account_numbers()
+
+    if response.status_code != status.HTTP_200_OK:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to load Schwab account list")
+
+    accounts = response.json()
+
+    if account_hash is not None:
+        try:
+            selected_account_hash = _set_active_account_hash(account_hash, accounts)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    else:
+        selected_account_hash = _get_active_account_hash()
+
+    return {
+        "selected_account_hash": selected_account_hash,
+        "accounts": accounts,
+        "hint": "Call /trader/v1/accounts?account_hash=<hashValue> to choose the active account.",
+    }
+
+
 @app.post("/webhook/tradingview", response_model=TradeResult)
 def tradingview_webhook(signal: TradingViewSignal, request: Request):
     settings = get_settings()
@@ -34,7 +121,7 @@ def tradingview_webhook(signal: TradingViewSignal, request: Request):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook secret")
 
     try:
-        return execute_signal(signal)
+        return execute_signal(signal, account_hash=_get_active_account_hash())
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
@@ -42,4 +129,6 @@ def tradingview_webhook(signal: TradingViewSignal, request: Request):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=False)
+    _bootstrap_account_hash()
+    _initialize_active_account_hash()
+    uvicorn.run("app.main:app", host="0.0.0.0", port=80, reload=False)

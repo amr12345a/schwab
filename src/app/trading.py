@@ -13,10 +13,14 @@ def _build_order(signal: TradingViewSignal, quantity: int):
     raise ValueError(f"Unsupported action: {signal.action}")
 
 
-def execute_signal(signal: TradingViewSignal) -> TradeResult:
+def execute_signal(signal: TradingViewSignal, account_hash: str | None = None) -> TradeResult:
     settings = get_settings()
     quantity = signal.quantity or settings.default_order_qty
     client = get_client()
+    resolved_account_hash = account_hash or settings.schwab_account_hash
+
+    if not resolved_account_hash:
+        raise RuntimeError("No active Schwab account selected. Choose one at /trader/v1/accounts first.")
 
     if settings.dry_run:
         return TradeResult(
@@ -25,13 +29,13 @@ def execute_signal(signal: TradingViewSignal) -> TradeResult:
             action=signal.action,
             symbol=signal.symbol,
             quantity=quantity,
-            account_hash=settings.schwab_account_hash,
+            account_hash=resolved_account_hash,
             order_id=None,
             message="Dry run enabled, order not submitted",
         )
 
     order_spec = _build_order(signal, quantity)
-    response = client.place_order(settings.schwab_account_hash, order_spec)
+    response = client.place_order(resolved_account_hash, order_spec)
 
     order_id = None
     if hasattr(response, "headers"):
@@ -43,7 +47,7 @@ def execute_signal(signal: TradingViewSignal) -> TradeResult:
         action=signal.action,
         symbol=signal.symbol,
         quantity=quantity,
-        account_hash=settings.schwab_account_hash,
+        account_hash=resolved_account_hash,
         order_id=order_id,
         message="Order submitted to Schwab",
     )

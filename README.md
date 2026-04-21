@@ -32,13 +32,18 @@ Set these environment variables before starting the server:
 - `SCHWAB_APP_SECRET`
 - `SCHWAB_CALLBACK_URL` defaults to `https://127.0.0.1:8182/`
 - `SCHWAB_TOKEN_PATH` defaults to `./token.json`
-- `SCHWAB_ACCOUNT_HASH`
+- `SCHWAB_ACCOUNT_HASH` optional; if omitted, choose an account at runtime through `/trader/v1/accounts`
+- `SCHWAB_PAPER_ACCOUNT_HASH` and `SCHWAB_REAL_ACCOUNT_HASH` optional; if both are set, the launcher asks which account to use
 - `TRADINGVIEW_WEBHOOK_SECRET` optional, but recommended
 - `DEFAULT_ORDER_QTY` defaults to `1`
 - `DRY_RUN` defaults to `false`
 - `SCHWAB_AUTH_MODE` defaults to `token_file`
 
 `SCHWAB_AUTH_MODE=token_file` expects an existing Schwab token file. If you need to create one locally, use the Schwab login flow once and keep the token file private.
+
+Use `GET /trader/v1/accounts` to see the linked Schwab accounts. Pass `account_hash=<hashValue>` to that endpoint to set the active account for subsequent trades.
+
+If you set both `SCHWAB_PAPER_ACCOUNT_HASH` and `SCHWAB_REAL_ACCOUNT_HASH`, start the app from the terminal and it will prompt you to choose paper or real before the server comes up.
 
 ## Run
 

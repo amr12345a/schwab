@@ -13,8 +13,6 @@ def _validate_required_settings() -> None:
         missing.append("SCHWAB_API_KEY")
     if not settings.schwab_app_secret:
         missing.append("SCHWAB_APP_SECRET")
-    if not settings.schwab_account_hash:
-        missing.append("SCHWAB_ACCOUNT_HASH")
     if missing:
         raise RuntimeError("Missing required environment variables: " + ", ".join(missing))
 
