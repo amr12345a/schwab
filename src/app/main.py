@@ -12,7 +12,9 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, status, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
+import requests
 
 from app.config import get_settings
 from app.models import TestOrderRequest, TradeResult, TradingViewSignal
@@ -23,11 +25,55 @@ app = FastAPI(title="TradingView to Schwab Bridge", version="0.1.0")
 _account_hash_lock = Lock()
 _active_account_hash: str | None = None
 
+# --- Web UI Templates ---
+def _get_html_wrapper(content: str):
+    return f"""
+    <html>
+        <head>
+            <title>Schwab Bridge Dashboard</title>
+            <style>
+                body {{ font-family: sans-serif; margin: 40px; line-height: 1.6; max-width: 800px; }}
+                .card {{ border: 1px solid #ddd; padding: 20px; border-radius: 8px; box-shadow: 2px 2px 10px #eee; }}
+                .btn {{ background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; border: none; cursor: pointer; }}
+                .status {{ font-weight: bold; color: green; }}
+                input[type="text"] {{ width: 100%; padding: 10px; margin: 10px 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="card">{content}</div>
+        </body>
+    </html>
+    """
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard():
+    settings = get_settings()
+    active = _get_active_account_hash()
+    
+    token_exists = Path(settings.schwab_token_path).exists()
+    status_msg = f"Connected to Account: <span class='status'>{active}</span>" if active else "Not Connected"
+    
+    content = f"""
+        <h1>Schwab Bridge Dashboard</h1>
+        <p>Status: {status_msg}</p>
+        <hr/>
+        <h3>Step 1: Authenticate</h3>
+        {"<p style='color: green;'>✓ Token Found</p>" if token_exists else "<p style='color: red;'>× No Token Found</p>"}
+        <a class="btn" href="/auth/login">Login to Schwab</a>
+        <p><small>If you are redirected to a broken '127.0.0.1' page, copy the whole URL and paste it below.</small></p>
+        <form action="/auth/callback-manual" method="post">
+            <input type="text" name="url" placeholder="Paste the redirected 127.0.0.1 URL here" required/>
+            <button class="btn" type="submit">Complete Auth</button>
+        </form>
+        <hr/>
+        <h3>Step 2: Select Account</h3>
+        <a class="btn" style="background: #28a745;" href="/trader/v1/accounts/ui">View & Select Accounts</a>
+    """
+    return _get_html_wrapper(content)
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
 
 def _extract_secret(request: Request, signal: TradingViewSignal) -> str | None:
     query_secret = request.query_params.get("secret")
@@ -42,49 +88,74 @@ def _initialize_active_account_hash() -> None:
     settings = get_settings()
     with _account_hash_lock:
         _active_account_hash = settings.schwab_account_hash or None
-    if _active_account_hash:
-        print(f"SUCCESS: Trading session active for Schwab account: {_active_account_hash}")
-    else:
-        print("WARNING: No active Schwab account selected. Webhooks will fail until an account is chosen.")
-        print("INFO: You can select an account via GET /trader/v1/accounts?account_hash=<hashValue>")
 
+# --- Auth Routes ---
+@app.get("/auth/login")
+def auth_login():
+    settings = get_settings()
+    auth_url = (
+        f"https://api.schwabapi.com/v1/oauth/authorize"
+        f"?client_id={settings.schwab_api_key}"
+        f"&redirect_uri={settings.schwab_callback_url}"
+        "&response_type=code"
+    )
+    return RedirectResponse(auth_url)
 
-def _bootstrap_account_hash() -> None:
-    if os.getenv("SCHWAB_ACCOUNT_HASH"):
-        print(f"INFO: Account hash pre-configured: {os.getenv('SCHWAB_ACCOUNT_HASH')}")
-        return
+@app.post("/auth/callback-manual")
+def auth_callback_manual(url: str = Form(...)):
+    from urllib.parse import urlparse, parse_qs
+    import time
+    settings = get_settings()
+    
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+    if "code" not in params:
+        raise HTTPException(status_code=400, detail="No code found in URL")
+    
+    code = params["code"][0]
+    
+    # Exchange
+    token_resp = requests.post(
+        "https://api.schwabapi.com/v1/oauth/token",
+        data={{
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": settings.schwab_callback_url,
+            "client_id": settings.schwab_api_key,
+            "client_secret": settings.schwab_app_secret,
+        }}
+    )
+    token_resp.raise_for_status()
+    token_data = token_resp.json()
+    token_data["expires_at"] = time.time() + token_data.get("expires_in", 3600)
+    
+    with open(settings.schwab_token_path, "w") as f:
+        import json
+        json.dump(token_data, f)
+    
+    return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
 
-    print("INFO: Fetching accounts from Schwab API for selection...")
+@app.get("/trader/v1/accounts/ui", response_class=HTMLResponse)
+def trader_accounts_ui():
     try:
         client = get_client()
         response = client.get_account_numbers()
-        if response.status_code != 200:
-            print(f"ERROR: Failed to fetch accounts (HTTP {response.status_code})")
-            return
-
         accounts = response.json()
-        if not accounts:
-            print("ERROR: No Schwab accounts found.")
-            return
-
-        print("\n--- Available Schwab Accounts ---")
-        for i, acc in enumerate(accounts):
-            print(f"[{i}] Account Number: {acc.get('accountNumber')} | Hash: {acc.get('hashValue')}")
-
-        while True:
-            choice = input(f"\nSelect account index [0-{len(accounts)-1}]: ").strip()
-            try:
-                idx = int(choice)
-                if 0 <= idx < len(accounts):
-                    selected_hash = accounts[idx].get("hashValue")
-                    os.environ["SCHWAB_ACCOUNT_HASH"] = selected_hash
-                    print(f"SUCCESS: Selected account hash: {selected_hash}")
-                    return
-            except (ValueError, IndexError):
-                pass
-            print("Invalid choice. Please enter a number from the list.")
-    except Exception as exc:
-        print(f"ERROR: Could not fetch accounts: {exc}")
+        
+        list_html = ""
+        for acc in accounts:
+            h = acc.get("hashValue")
+            n = acc.get("accountNumber")
+            list_html += f"<li>{n} | <a href='/trader/v1/accounts?account_hash={h}'>Select this account</a></li>"
+        
+        content = f"""
+            <h1>Select Your Account</h1>
+            <ul>{list_html}</ul>
+            <br/><a href="/">Back to Dashboard</a>
+        """
+        return _get_html_wrapper(content)
+    except Exception as e:
+        return _get_html_wrapper(f"<h1>Error</h1><p>{str(e)}</p><a href='/'>Back</a>")
 
 
 def _get_active_account_hash() -> str | None:
@@ -102,8 +173,11 @@ def _set_active_account_hash(account_hash: str, accounts: list[dict]) -> str:
             os.environ["SCHWAB_ACCOUNT_HASH"] = selected_account_hash
             get_settings.cache_clear()
             return selected_account_hash
-
-    raise RuntimeError(f"Unknown Schwab account hash: {account_hash}")
+    
+    # If not in list, force it anyway (useful for single accounts)
+    os.environ["SCHWAB_ACCOUNT_HASH"] = account_hash
+    get_settings.cache_clear()
+    return account_hash
 
 
 @app.get("/trader/v1/accounts")
@@ -119,6 +193,7 @@ def trader_accounts(account_hash: str | None = None):
     if account_hash is not None:
         try:
             selected_account_hash = _set_active_account_hash(account_hash, accounts)
+            return RedirectResponse("/")
         except RuntimeError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     else:
