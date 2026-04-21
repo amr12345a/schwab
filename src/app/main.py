@@ -38,47 +38,47 @@ def _initialize_active_account_hash() -> None:
         _active_account_hash = settings.schwab_account_hash or None
     if _active_account_hash:
         print(f"SUCCESS: Trading session active for Schwab account: {_active_account_hash}")
-        else:
-            print("WARNING: No active Schwab account selected. Webhooks will fail until an account is chosen.")
-            print("INFO: You can select an account via GET /trader/v1/accounts?account_hash=<hashValue>")
+    else:
+        print("WARNING: No active Schwab account selected. Webhooks will fail until an account is chosen.")
+        print("INFO: You can select an account via GET /trader/v1/accounts?account_hash=<hashValue>")
 
 
 def _bootstrap_account_hash() -> None:
-    existing_hash = os.getenv("SCHWAB_ACCOUNT_HASH")
-    if existing_hash:
-        print(f"INFO: Using SCHWAB_ACCOUNT_HASH from environment: {existing_hash}")
+    if os.getenv("SCHWAB_ACCOUNT_HASH"):
+        print(f"INFO: Account hash pre-configured: {os.getenv('SCHWAB_ACCOUNT_HASH')}")
         return
 
-    paper_account_hash = os.getenv("SCHWAB_PAPER_ACCOUNT_HASH", "").strip()
-    real_account_hash = os.getenv("SCHWAB_REAL_ACCOUNT_HASH", "").strip()
+    print("INFO: Fetching accounts from Schwab API for selection...")
+    try:
+        client = get_client()
+        response = client.get_account_numbers()
+        if response.status_code != 200:
+            print(f"ERROR: Failed to fetch accounts (HTTP {response.status_code})")
+            return
 
-    if paper_account_hash and real_account_hash:
-        if not sys.stdin.isatty():
-            raise RuntimeError(
-                "Choose paper or real from an interactive terminal, or set SCHWAB_ACCOUNT_HASH directly before starting the server."
-            )
+        accounts = response.json()
+        if not accounts:
+            print("ERROR: No Schwab accounts found.")
+            return
+
+        print("\n--- Available Schwab Accounts ---")
+        for i, acc in enumerate(accounts):
+            print(f"[{i}] Account Number: {acc.get('accountNumber')} | Hash: {acc.get('hashValue')}")
 
         while True:
-            choice = input("Choose Schwab account to use [paper/real]: ").strip().lower()
-            if choice in {"paper", "p"}:
-                os.environ["SCHWAB_ACCOUNT_HASH"] = paper_account_hash
-                print(f"INFO: Paper account hash selected: {paper_account_hash}")
-                return
-            if choice in {"real", "r"}:
-                os.environ["SCHWAB_ACCOUNT_HASH"] = real_account_hash
-                print(f"INFO: Real account hash selected: {real_account_hash}")
-                return
-            print("Please enter paper or real.")
-
-    if paper_account_hash:
-        os.environ["SCHWAB_ACCOUNT_HASH"] = paper_account_hash
-        print(f"INFO: Only paper account hash found. Using: {paper_account_hash}")
-        return
-
-    if real_account_hash:
-        os.environ["SCHWAB_ACCOUNT_HASH"] = real_account_hash
-        print(f"INFO: Only real account hash found. Using: {real_account_hash}")
-        return
+            choice = input(f"\nSelect account index [0-{len(accounts)-1}]: ").strip()
+            try:
+                idx = int(choice)
+                if 0 <= idx < len(accounts):
+                    selected_hash = accounts[idx].get("hashValue")
+                    os.environ["SCHWAB_ACCOUNT_HASH"] = selected_hash
+                    print(f"SUCCESS: Selected account hash: {selected_hash}")
+                    return
+            except (ValueError, IndexError):
+                pass
+            print("Invalid choice. Please enter a number from the list.")
+    except Exception as exc:
+        print(f"ERROR: Could not fetch accounts: {exc}")
 
 
 def _get_active_account_hash() -> str | None:
