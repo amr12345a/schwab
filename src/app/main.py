@@ -38,9 +38,9 @@ def _initialize_active_account_hash() -> None:
         _active_account_hash = settings.schwab_account_hash or None
     if _active_account_hash:
         print(f"SUCCESS: Trading session active for Schwab account: {_active_account_hash}")
-        else:
-            print("WARNING: No active Schwab account selected. Webhooks will fail until an account is chosen.")
-            print("INFO: You can select an account via GET /trader/v1/accounts?account_hash=<hashValue>")
+    else:
+        print("WARNING: No active Schwab account selected. Webhooks will fail until an account is chosen.")
+        print("INFO: You can select an account via GET /trader/v1/accounts?account_hash=<hashValue>")
 
 
 def _bootstrap_account_hash() -> None:
