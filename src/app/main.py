@@ -239,4 +239,4 @@ if __name__ == "__main__":
     else:
         print("READY: No account selected. Webhooks will fail until an account is chosen via API.")
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

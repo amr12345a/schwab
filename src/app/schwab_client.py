@@ -29,6 +29,7 @@ def get_client():
             app_secret=settings.schwab_app_secret,
             callback_url=settings.schwab_callback_url,
             token_path=str(token_path),
+            interactive=False,
         )
 
     if not token_path.exists():
