@@ -53,11 +53,7 @@ def _bootstrap_account_hash() -> None:
     real_account_hash = os.getenv("SCHWAB_REAL_ACCOUNT_HASH", "").strip()
 
     if paper_account_hash and real_account_hash:
-        if not sys.stdin.isatty():
-            raise RuntimeError(
-                "Choose paper or real from an interactive terminal, or set SCHWAB_ACCOUNT_HASH directly before starting the server."
-            )
-
+        print("Multiple accounts detected.")
         while True:
             choice = input("Choose Schwab account to use [paper/real]: ").strip().lower()
             if choice in {"paper", "p"}:
@@ -79,6 +75,8 @@ def _bootstrap_account_hash() -> None:
         os.environ["SCHWAB_ACCOUNT_HASH"] = real_account_hash
         print(f"INFO: Only real account hash found. Using: {real_account_hash}")
         return
+
+    print("INFO: No pre-configured account hashes found. Server will start in 'unselected' mode.")
 
 
 def _get_active_account_hash() -> str | None:
@@ -152,4 +150,11 @@ if __name__ == "__main__":
 
     _bootstrap_account_hash()
     _initialize_active_account_hash()
+    
+    active = _get_active_account_hash()
+    if active:
+        print(f"READY: Orders will be sent to account: {active}")
+    else:
+        print("READY: No account selected yet. Use the API to choose an account.")
+
     uvicorn.run(app, host="127.0.0.1", port=8000)
