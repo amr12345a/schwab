@@ -14,6 +14,7 @@ dependencies = [
     "pydantic>=2.7,<3.0",
     "schwab-py>=1.5.1",
     "python-dotenv>=1.0.0",
+    "cryptography>=42.0.0",
 ]
 
 [project.optional-dependencies]

@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 import sys
 from threading import Lock
+from urllib.parse import parse_qs, urlencode, urlparse
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -93,22 +94,34 @@ def _initialize_active_account_hash() -> None:
 @app.get("/auth/login")
 def auth_login():
     settings = get_settings()
-    auth_url = (
-        f"https://api.schwabapi.com/v1/oauth/authorize"
-        f"?client_id={settings.schwab_api_key}"
-        f"&redirect_uri={settings.schwab_callback_url}"
-        "&response_type=code"
-    )
+    if not settings.schwab_api_key:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Missing SCHWAB_API_KEY")
+
+    params = {
+        "client_id": settings.schwab_api_key,
+        "redirect_uri": settings.schwab_callback_url,
+        "response_type": "code",
+    }
+
+    scope = os.getenv("SCHWAB_SCOPE", "").strip()
+    if scope:
+        params["scope"] = scope
+
+    auth_url = f"https://api.schwabapi.com/v1/oauth/authorize?{urlencode(params)}"
     return RedirectResponse(auth_url)
 
 @app.post("/auth/callback-manual")
 def auth_callback_manual(url: str = Form(...)):
-    from urllib.parse import urlparse, parse_qs
     import time
     settings = get_settings()
     
     parsed = urlparse(url)
     params = parse_qs(parsed.query)
+
+    if "error" in params:
+        detail = params.get("error_description", [""])[0]
+        raise HTTPException(status_code=400, detail=f"OAuth error: {params['error'][0]} {detail}".strip())
+
     if "code" not in params:
         raise HTTPException(status_code=400, detail="No code found in URL")
     
@@ -117,15 +130,22 @@ def auth_callback_manual(url: str = Form(...)):
     # Exchange
     token_resp = requests.post(
         "https://api.schwabapi.com/v1/oauth/token",
-        data={{
+        data={
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": settings.schwab_callback_url,
             "client_id": settings.schwab_api_key,
             "client_secret": settings.schwab_app_secret,
-        }}
+        },
+        timeout=30,
     )
-    token_resp.raise_for_status()
+
+    try:
+        token_resp.raise_for_status()
+    except requests.HTTPError as exc:
+        detail = token_resp.text.strip() if token_resp.text else str(exc)
+        raise HTTPException(status_code=502, detail=f"Token exchange failed: {detail}") from exc
+
     token_data = token_resp.json()
     token_data["expires_at"] = time.time() + token_data.get("expires_in", 3600)
     
