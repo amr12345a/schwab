@@ -47,6 +47,9 @@ def get_client():
     _validate_required_settings()
     token_path = Path(settings.schwab_token_path)
 
+    if token_path.exists():
+        _normalize_token_file_format(token_path)
+
     if settings.schwab_auth_mode == "easy_client":
         return easy_client(
             api_key=settings.schwab_api_key,
@@ -60,8 +63,6 @@ def get_client():
         raise RuntimeError(
             f"Token file not found at {token_path}. Create a Schwab token first or set SCHWAB_AUTH_MODE=easy_client for local setup."
         )
-
-    _normalize_token_file_format(token_path)
 
     return client_from_token_file(
         token_path=str(token_path),
