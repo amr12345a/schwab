@@ -92,6 +92,37 @@ def _initialize_active_account_hash() -> None:
     with _account_hash_lock:
         _active_account_hash = settings.schwab_account_hash or None
 
+
+def _select_startup_account_hash() -> str | None:
+    explicit = os.getenv("SCHWAB_ACCOUNT_HASH", "").strip()
+    if explicit:
+        return explicit
+
+    paper_hash = os.getenv("SCHWAB_PAPER_ACCOUNT_HASH", "").strip()
+    real_hash = os.getenv("SCHWAB_REAL_ACCOUNT_HASH", "").strip()
+
+    if paper_hash and real_hash:
+        if sys.stdin is None or not sys.stdin.isatty():
+            print("Both SCHWAB_PAPER_ACCOUNT_HASH and SCHWAB_REAL_ACCOUNT_HASH are set. No interactive terminal detected; defaulting to paper account.")
+            return paper_hash
+
+        print("Choose account mode before startup:")
+        print("  1) Paper")
+        print("  2) Real")
+        while True:
+            choice = input("Select 1 or 2 [1]: ").strip() or "1"
+            if choice == "1":
+                return paper_hash
+            if choice == "2":
+                return real_hash
+            print("Invalid choice. Enter 1 for Paper or 2 for Real.")
+
+    if paper_hash:
+        return paper_hash
+    if real_hash:
+        return real_hash
+    return None
+
 # --- Auth Routes ---
 @app.get("/auth/login")
 def auth_login():
@@ -255,6 +286,10 @@ def trader_test_order(request_body: TestOrderRequest):
 
 if __name__ == "__main__":
     import uvicorn
+
+    selected_hash = _select_startup_account_hash()
+    if selected_hash:
+        os.environ["SCHWAB_ACCOUNT_HASH"] = selected_hash
 
     _initialize_active_account_hash()
     
