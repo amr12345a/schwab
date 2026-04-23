@@ -1,6 +1,8 @@
 from pathlib import Path
+import json
 import os
 import sys
+import time
 from threading import Lock
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -112,7 +114,6 @@ def auth_login():
 
 @app.post("/auth/callback-manual")
 def auth_callback_manual(url: str = Form(...)):
-    import time
     settings = get_settings()
     
     parsed = urlparse(url)
@@ -148,10 +149,14 @@ def auth_callback_manual(url: str = Form(...)):
 
     token_data = token_resp.json()
     token_data["expires_at"] = time.time() + token_data.get("expires_in", 3600)
+    # schwab-py expects token metadata at the top level.
+    wrapped_token = {
+        "creation_timestamp": int(time.time()),
+        "token": token_data,
+    }
     
     with open(settings.schwab_token_path, "w") as f:
-        import json
-        json.dump(token_data, f)
+        json.dump(wrapped_token, f)
     
     return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
 
